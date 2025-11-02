@@ -1,6 +1,11 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 
-/* ---------- AVL Implementation ---------- */
+
+
+
+let NEXT_ID = 1;
+function newId() { return "n" + (NEXT_ID++); }
+
 
 class AVLNode {
   constructor(val) {
@@ -8,13 +13,13 @@ class AVLNode {
     this.left = null;
     this.right = null;
     this.height = 1;
-    this.id = Math.random().toString(36).slice(2, 9);
+    this.id = newId();
   }
 }
 
-function height(n) { return n ? n.height : 0; }
-function updateHeight(n) { if (!n) return 0; n.height = 1 + Math.max(height(n.left), height(n.right)); return n.height; }
-function getBalance(n) { if (!n) return 0; return height(n.left) - height(n.right); }
+function nodeHeight(n) { return n ? n.height : 0; }
+function updateHeight(n) { if (!n) return 0; n.height = 1 + Math.max(nodeHeight(n.left), nodeHeight(n.right)); return n.height; }
+function getBalance(n) { if (!n) return 0; return nodeHeight(n.left) - nodeHeight(n.right); }
 
 function rotateRight(y) {
   const x = y.left;
@@ -35,7 +40,7 @@ function rotateLeft(x) {
   return y;
 }
 
-/* Insert / Delete with trace (unchanged logic) */
+
 function avlInsertTrace(node, key, trace) {
   if (!node) {
     trace.push({ text: `Insert ${key} as new node`, line: "InsertNode" });
@@ -67,20 +72,20 @@ function avlInsertTrace(node, key, trace) {
     return rotateLeft(node);
   }
   if (bal > 1 && key > node.left.val) {
-    trace.push({ text: `Left-Right at ${node.val} → rotateLeft(${node.left.val}), rotateRight`, line: "RotateLeftRight" });
+    trace.push({ text: `Left-Right at ${node.val} → rotateLeft(${node.left.val}) then rotateRight`, line: "RotateLeftRight" });
     node.left = rotateLeft(node.left);
     return rotateRight(node);
   }
   if (bal < -1 && key < node.right.val) {
-    trace.push({ text: `Right-Left at ${node.val} → rotateRight(${node.right.val}), rotateLeft`, line: "RotateRightLeft" });
+    trace.push({ text: `Right-Left at ${node.val} → rotateRight(${node.right.val}) then rotateLeft`, line: "RotateRightLeft" });
     node.right = rotateRight(node.right);
     return rotateLeft(node);
   }
   return node;
 }
 
-function minValue(node) {
-  let cur = node;
+function minValueNode(n) {
+  let cur = n;
   while (cur && cur.left) cur = cur.left;
   return cur;
 }
@@ -101,7 +106,7 @@ function avlDeleteTrace(node, key, trace) {
       const t = node.left || node.right;
       return t || null;
     } else {
-      const succ = minValue(node.right);
+      const succ = minValueNode(node.right);
       trace.push({ text: `Replace ${node.val} with inorder successor ${succ.val}`, line: "TwoChildren" });
       node.val = succ.val;
       node.right = avlDeleteTrace(node.right, succ.val, trace);
@@ -133,22 +138,20 @@ function avlDeleteTrace(node, key, trace) {
   return node;
 }
 
-/* ---------- Inorder layout (dynamic canvas) ---------- */
-function computeInorderPositions(root, options = {}) {
-  const horizontalSpacing = options.hSpacing ?? 90;
-  const verticalSpacing = options.vSpacing ?? 100;
+
+function layoutInorder(root, hSpacing = 90, vSpacing = 110) {
   const nodes = [];
-  let index = 0;
-  function inorderAssign(n, depth) {
+  let idx = 0;
+  function inorder(n, depth) {
     if (!n) return;
-    inorderAssign(n.left, depth + 1);
-    const x = index * horizontalSpacing + 60;
-    const y = depth * verticalSpacing + 60;
-    nodes.push({ id: n.id, val: n.val, x, y, bf: getBalance(n), nodeRef: n, depth });
-    index++;
-    inorderAssign(n.right, depth + 1);
+    inorder(n.left, depth + 1);
+    const x = idx * hSpacing + 60;
+    const y = depth * vSpacing + 60;
+    nodes.push({ id: n.id, val: n.val, x, y, bf: getBalance(n), depth });
+    idx++;
+    inorder(n.right, depth + 1);
   }
-  inorderAssign(root, 0);
+  inorder(root, 0);
 
   const edges = [];
   function collect(n) {
@@ -160,257 +163,247 @@ function computeInorderPositions(root, options = {}) {
   }
   collect(root);
 
-  const width = Math.max(300, index * horizontalSpacing + 120);
-  const maxDepth = nodes.reduce((m, n) => Math.max(m, n.depth), 0);
-  const height = Math.max(300, (maxDepth + 1) * verticalSpacing + 120);
+  const width = Math.max(360, idx * hSpacing + 120);
+  const maxDepth = nodes.reduce((m, x) => Math.max(m, x.depth), 0);
+  const height = Math.max(300, (maxDepth + 1) * vSpacing + 120);
   return { nodes, edges, width, height };
 }
 
-/* pseudocode lines */
+
+function cloneTreePreserve(node) {
+  if (!node) return null;
+  const n = new AVLNode(node.val);
+  n.id = node.id ?? newId();
+  n.height = node.height ?? 1;
+  n.left = cloneTreePreserve(node.left);
+  n.right = cloneTreePreserve(node.right);
+  return n;
+}
+
 const PSEUDOCODE = [
   { key: "Compare", text: "Compare key with node value" },
-  { key: "GoLeft", text: "If key < node.val -> go left" },
-  { key: "GoRight", text: "If key > node.val -> go right" },
-  { key: "InsertNode", text: "Insert when null reached" },
+  { key: "GoLeft", text: "If key < node.val → recurse left" },
+  { key: "GoRight", text: "If key > node.val → recurse right" },
+  { key: "InsertNode", text: "Insert new node when null reached" },
   { key: "UpdateHeight", text: "Update node.height = 1 + max(height(left), height(right))" },
   { key: "Balance", text: "Compute balance = height(left) - height(right)" },
   { key: "RotateRight", text: "Right rotation (LL case)" },
   { key: "RotateLeft", text: "Left rotation (RR case)" },
   { key: "RotateLeftRight", text: "Left-Right rotation (LR case)" },
   { key: "RotateRightLeft", text: "Right-Left rotation (RL case)" },
-  { key: "Duplicate", text: "Ignore duplicate" },
+  { key: "Duplicate", text: "Handle duplicate (ignore)" },
   { key: "NotFound", text: "Key not found for delete" },
   { key: "Found", text: "Found node to delete" },
 ];
 
-/* ---------- App component ---------- */
 
 export default function App() {
   const [root, setRoot] = useState(null);
-  const [value, setValue] = useState("");
+  const [input, setInput] = useState("");
   const [trace, setTrace] = useState([]);
-  const [step, setStep] = useState(-1);
-  const [speed, setSpeed] = useState(700);
+  const [stepIndex, setStepIndex] = useState(-1);
   const [autoplay, setAutoplay] = useState(false);
-  const [notice, setNotice] = useState(""); // small on-screen message
-  const intervalRef = useRef(null);
+  const [speed, setSpeed] = useState(700);
+  const [notice, setNotice] = useState("");
 
-  // layout
-  const layout = useMemo(() => computeInorderPositions(root, { hSpacing: 90, vSpacing: 100 }), [root]);
+  
+  const layout = useMemo(() => layoutInorder(root, 90, 110), [root]);
   const nodes = layout.nodes;
   const edges = layout.edges;
   const canvasW = layout.width;
   const canvasH = layout.height;
 
-  // autoplay stepping
+  
   useEffect(() => {
-    if (autoplay && trace.length > 0) {
-      intervalRef.current = setInterval(() => {
-        setStep((s) => Math.min(s + 1, trace.length - 1));
-      }, Math.max(80, speed));
-    } else {
-      clearInterval(intervalRef.current);
-    }
-    return () => clearInterval(intervalRef.current);
+    if (!autoplay || trace.length === 0) return;
+    const id = setInterval(() => {
+      setStepIndex((s) => {
+        const next = Math.min(s + 1, trace.length - 1);
+        if (next === trace.length - 1) setAutoplay(false);
+        return next;
+      });
+    }, Math.max(80, speed));
+    return () => clearInterval(id);
   }, [autoplay, trace, speed]);
 
-  // helper to display notice temporarily
-  function flashNotice(msg, ms = 1200) {
+  
+  function flash(msg, ms = 1000) {
     setNotice(msg);
     setTimeout(() => setNotice(""), ms);
   }
 
-  // debug helper
-  function debugLog(...args) {
-    // logs both to console and on-screen notice when short
-    console.log(...args);
-    if (args.length === 1 && typeof args[0] === "string") flashNotice(args[0], 1200);
+  
+  function applyNewRoot(rawRoot, newTrace) {
+    
+    const fresh = cloneTreePreserve(rawRoot);
+    setRoot(fresh);
+    setTrace(newTrace || []);
+    setStepIndex((newTrace && newTrace.length > 0) ? 0 : -1);
   }
 
-  // Insert handler — defensive, with logs
+  
   function handleInsert() {
-    if (value === "" || value === null) {
-      debugLog("Insert aborted: no value entered");
-      return;
-    }
-    const n = Number(value);
-    if (Number.isNaN(n)) {
-      debugLog("Insert aborted: value is not a number");
-      return;
-    }
+    if (input === "" || input === null) { flash("Enter a number"); return; }
+    const num = Number(input);
+    if (Number.isNaN(num)) { flash("Not a number"); return; }
 
-    debugLog("Attempting insert:", n, "current root:", root ? "(exists)" : "(null)");
+    
     const newTrace = [];
-    const newRoot = avlInsertTrace(root, n, newTrace);
+    const newRoot = avlInsertTrace(root, num, newTrace);
 
-    // Sanity: if newRoot is null something went wrong (shouldn't happen)
-    if (!newRoot) {
-      console.error("Insert returned null root — unexpected");
-      flashNotice("Insert error — see console");
-      return;
-    }
-
-    setRoot(newRoot);
-    setTrace(newTrace);
-    setStep(0);
-    setValue(""); // clear input
-    debugLog(`Inserted ${n} — trace length: ${newTrace.length}`);
+    applyNewRoot(newRoot, newTrace);
+    setInput("");
+    flash(`Inserted ${num}`);
+    console.log("Inserted", num, "trace:", newTrace);
   }
 
-  // Delete handler — defensive, with logs
+  
   function handleDelete() {
-    if (value === "" || value === null) {
-      debugLog("Delete aborted: no value entered");
-      return;
-    }
-    const n = Number(value);
-    if (Number.isNaN(n)) {
-      debugLog("Delete aborted: not a number");
-      return;
-    }
-    debugLog("Attempting delete:", n, "current root:", root ? "(exists)" : "(null)");
+    if (input === "" || input === null) { flash("Enter a number"); return; }
+    const num = Number(input);
+    if (Number.isNaN(num)) { flash("Not a number"); return; }
+
     const newTrace = [];
-    const newRoot = avlDeleteTrace(root, n, newTrace);
-    setRoot(newRoot);
-    setTrace(newTrace);
-    setStep(0);
-    setValue("");
-    debugLog(`Delete ${n} — trace length: ${newTrace.length}`);
+    const newRoot = avlDeleteTrace(root, num, newTrace);
+
+    applyNewRoot(newRoot, newTrace);
+    setInput("");
+    flash(`Delete ${num}`);
+    console.log("Deleted", num, "trace:", newTrace);
   }
 
   function handleClear() {
     setRoot(null);
     setTrace([]);
-    setStep(-1);
-    flashNotice("Cleared tree");
+    setStepIndex(-1);
+    flash("Cleared tree");
   }
 
-  const current = step >= 0 ? trace[step] : null;
-  const pseudocodeKey = current ? current.line : null;
+  
+  function onKeyDown(e) {
+    if (e.key === "Enter") handleInsert();
+  }
+
+  const current = stepIndex >= 0 ? trace[stepIndex] : null;
+  const currentLine = current ? current.line : null;
+
+
+  const pageStyle = { minHeight: "100vh", background: "linear-gradient(180deg,#071021,#04202d)", color: "#e6fbff", padding: 18, fontFamily: "Inter, system-ui, Arial" };
+  const cardStyle = { background: "rgba(8,15,20,0.6)", border: "1px solid rgba(8,20,24,0.5)", borderRadius: 10, padding: 12 };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white p-4">
-      <div className="max-w-[1400px] mx-auto">
-        <header className="mb-4 text-center">
-          <h1 className="text-3xl font-extrabold text-cyan-300">🌲 AVL Tree Visualizer</h1>
-          <p className="text-sm text-cyan-200/70 mt-1">Insert / Delete / Trace — BF shown in green</p>
+    <div style={pageStyle}>
+      <div style={{ maxWidth: 1320, margin: "0 auto" }}>
+        <header style={{ textAlign: "center", marginBottom: 10 }}>
+          <h1 style={{ fontSize: 28, margin: 0 }}>🌲 AVL Tree Visualizer</h1>
+          <div style={{ color: "#9de6de", fontSize: 13, marginTop: 6 }}>Insert / Delete / Trace — BF shown in green</div>
         </header>
 
-        {/* toolbar above canvas */}
-        <div className="flex flex-wrap items-center gap-2 justify-center mb-4">
+        {/* toolbar */}
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", marginBottom: 12, flexWrap: "wrap" }}>
           <input
             type="number"
             placeholder="value"
-            className="px-3 py-2 rounded bg-slate-700 border border-slate-600 text-white w-36"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") handleInsert(); }}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={onKeyDown}
+            style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid #253239", background: "#0a1418", color: "#fff", width: 120 }}
           />
-          <button onClick={handleInsert} className="px-4 py-2 rounded bg-cyan-600 hover:bg-cyan-500">Insert</button>
-          <button onClick={handleDelete} className="px-4 py-2 rounded bg-rose-600 hover:bg-rose-500">Delete</button>
-          <button onClick={handleClear} className="px-4 py-2 rounded bg-gray-600 hover:bg-gray-500">Clear</button>
+          <button onClick={handleInsert} style={{ padding: "8px 12px", borderRadius: 6, border: "none", cursor: "pointer", background: "#0aa6b2", color: "#021418" }}>Insert</button>
+          <button onClick={handleDelete} style={{ padding: "8px 12px", borderRadius: 6, border: "none", cursor: "pointer", background: "#ff6b6b", color: "#fff" }}>Delete</button>
+          <button onClick={handleClear} style={{ padding: "8px 12px", borderRadius: 6, border: "none", cursor: "pointer", background: "#6b7280", color: "#fff" }}>Clear</button>
 
-          <div className="ml-4 flex items-center gap-2">
-            <label className="text-sm text-cyan-200/80">Speed</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 20 }}>
+            <label style={{ fontSize: 13, color: "#bfeef7" }}>Speed</label>
             <input type="range" min="200" max="1400" value={speed} onChange={(e) => setSpeed(Number(e.target.value))} />
-            <span className="text-sm text-cyan-200 ml-2">{speed} ms</span>
-            <label className="ml-4 text-sm">Autoplay</label>
-            <input className="ml-1" type="checkbox" checked={autoplay} onChange={(e) => setAutoplay(e.target.checked)} />
+            <span style={{ color: "#bfeef7", marginLeft: 6 }}>{speed} ms</span>
+            <label style={{ marginLeft: 14, fontSize: 13, color: "#bfeef7" }}>Autoplay</label>
+            <input style={{ marginLeft: 6 }} type="checkbox" checked={autoplay} onChange={(e) => setAutoplay(e.target.checked)} />
           </div>
         </div>
 
-        {/* small on-screen debug/notification */}
-        <div className="text-center mb-2">
-          {notice && <span className="bg-cyan-700 px-3 py-1 rounded text-sm">{notice}</span>}
+        {/* notice */}
+        <div style={{ textAlign: "center", marginBottom: 8 }}>
+          {notice && <span style={{ padding: "6px 10px", background: "#053b3b", borderRadius: 6 }}>{notice}</span>}
         </div>
 
         {/* main layout */}
-        <div className="grid" style={{ gridTemplateColumns: "1fr 410px", gap: "20px" }}>
-          {/* Canvas */}
-          <div className="bg-slate-800 rounded-lg border border-slate-700 p-3">
-            <div className="bg-slate-900/60 rounded-md border border-slate-700 p-2">
-              <svg viewBox={`0 0 ${canvasW} ${canvasH}`} width="100%" height={Math.min(canvasH, 720)} preserveAspectRatio="xMidYMid meet">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 420px", gap: 18 }}>
+          {/* LEFT: canvas */}
+          <div style={cardStyle}>
+            <div style={{ background: "rgba(3,15,20,0.4)", borderRadius: 8, padding: 8 }}>
+              <svg viewBox={`0 0 ${canvasW} ${canvasH}`} width="100%" height={Math.min(canvasH, 740)} preserveAspectRatio="xMidYMid meet">
                 {/* edges */}
                 {edges.map((e, i) => {
-                  const a = nodes.find((n) => n.id === e.from);
-                  const b = nodes.find((n) => n.id === e.to);
+                  const a = nodes.find(n => n.id === e.from);
+                  const b = nodes.find(n => n.id === e.to);
                   if (!a || !b) return null;
                   return (
-                    <line
-                      key={i}
-                      x1={a.x}
-                      y1={a.y}
-                      x2={b.x}
-                      y2={b.y}
-                      stroke="#475569"
-                      strokeWidth={2}
-                      strokeLinecap="round"
-                    />
+                    <line key={i}
+                      x1={a.x} y1={a.y}
+                      x2={b.x} y2={b.y}
+                      stroke="#4b5563" strokeWidth={2} strokeLinecap="round" />
                   );
                 })}
 
                 {/* nodes */}
-                {nodes.map((n) => (
+                {nodes.map(n => (
                   <g key={n.id} transform={`translate(${n.x}, ${n.y})`}>
-                    <circle r={22} fill="#0b1220" stroke="#06b6d4" strokeWidth={2} />
-                    <text x={0} y={6} textAnchor="middle" fill="#ffffff" fontSize="14" fontWeight="700">
-                      {n.val}
-                    </text>
-                    <text x={0} y={36} textAnchor="middle" fill="#34d399" fontSize="12" fontWeight="700">
-                      BF: {n.bf}
-                    </text>
+                    <circle r={22} fill="#071f24" stroke="#06b6d4" strokeWidth={2} />
+                    <text x={0} y={6} textAnchor="middle" fill="#ffffff" fontSize={14} fontWeight="700">{n.val}</text>
+                    <text x={0} y={36} textAnchor="middle" fill="#34d399" fontSize={12} fontWeight="700">BF: {n.bf}</text>
                   </g>
                 ))}
               </svg>
             </div>
           </div>
 
-          {/* Right panel */}
-          <aside className="bg-slate-800 rounded-lg border border-slate-700 p-4 h-[720px] overflow-auto">
-            <div className="mb-3">
-              <h2 className="text-xl font-semibold text-cyan-200">Algorithm & Trace</h2>
-              <p className="text-sm text-cyan-100/60 mt-1">Pseudocode on top — current line highlighted while trace runs.</p>
+          {/* RIGHT: pseudocode & trace */}
+          <aside style={{ ...cardStyle, height: "760px", overflow: "auto" }}>
+            <div style={{ marginBottom: 10 }}>
+              <h3 style={{ margin: 0, fontSize: 18, color: "#aeeff4" }}>Algorithm & Trace</h3>
+              <div style={{ fontSize: 13, color: "#bfeef7", marginTop: 6 }}>Pseudocode (current line highlighted) and operation trace.</div>
             </div>
 
-            <div className="mb-4 bg-slate-900/50 border border-slate-700 rounded p-3">
-              <div className="text-sm font-medium text-cyan-100 mb-2">Pseudocode</div>
-              <ol className="list-decimal ml-4 space-y-2 text-sm">
-                {PSEUDOCODE.map((l) => {
-                  const active = l.key === pseudocodeKey;
+            <section style={{ marginBottom: 12, padding: 8, borderRadius: 8, background: "rgba(2,10,12,0.4)" }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#dffeff", marginBottom: 6 }}>Pseudocode</div>
+              <ol style={{ paddingLeft: 18, color: "#cfeff3" }}>
+                {PSEUDOCODE.map((p) => {
+                  const active = p.key === currentLine;
                   return (
-                    <li key={l.key} className={`p-2 rounded ${active ? "bg-cyan-700/40 text-white" : "text-cyan-100/70"}`}>
-                      <div className="font-semibold text-sm">{l.key}</div>
-                      <div className="text-xs mt-1">{l.text}</div>
+                    <li key={p.key} style={{ marginBottom: 8, padding: 8, borderRadius: 6, background: active ? "rgba(6,182,212,0.12)" : "transparent", color: active ? "#eaffff" : "#cfeff3" }}>
+                      <div style={{ fontWeight: 700 }}>{p.key}</div>
+                      <div style={{ fontSize: 12 }}>{p.text}</div>
                     </li>
                   );
                 })}
               </ol>
-            </div>
+            </section>
 
-            <div className="mb-4 bg-slate-900/40 border border-slate-700 rounded p-3">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-sm font-medium text-cyan-100">Trace Steps</div>
-                <div className="text-xs text-cyan-200/60">Total: {trace.length}</div>
+            <section style={{ marginBottom: 12, padding: 8, borderRadius: 8, background: "rgba(2,10,12,0.35)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ fontWeight: 700, color: "#dffeff" }}>Trace Steps</div>
+                <div style={{ fontSize: 12, color: "#bfeef7" }}>Total: {trace.length}</div>
               </div>
-              <ul className="space-y-2 text-sm">
-                {trace.length === 0 && <li className="text-cyan-200/60">No steps yet — insert or delete a node.</li>}
+              <ul style={{ paddingLeft: 18 }}>
+                {trace.length === 0 && <li style={{ color: "#9bdad6" }}>No operations yet. Insert or Delete to generate steps.</li>}
                 {trace.map((t, i) => (
-                  <li key={i} className={`p-2 rounded ${i === step ? "bg-cyan-800 text-white" : "bg-transparent text-cyan-100/80"}`}>
-                    <div className="text-xs text-cyan-200/70">Step {i + 1}</div>
-                    <div className="mt-1">{t.text}</div>
+                  <li key={i} style={{ marginBottom: 8, padding: 8, borderRadius: 6, background: i === stepIndex ? "rgba(6,182,212,0.12)" : "transparent", color: i === stepIndex ? "#eaffff" : "#cfeff3" }}>
+                    <div style={{ fontSize: 12, color: "#9bdad6" }}>Step {i + 1}</div>
+                    <div style={{ marginTop: 6 }}>{t.text}</div>
                   </li>
                 ))}
               </ul>
-            </div>
+            </section>
 
-            <div className="bg-slate-900/30 border border-slate-700 rounded p-3 text-sm text-cyan-100/70">
-              <div className="font-medium mb-1">Legend & Tips</div>
-              <ul className="list-disc ml-5 text-xs space-y-1">
-                <li><strong>BF</strong> = balance factor (left height − right height).</li>
-                <li>Use <em>Speed</em> to slow down or speed up autoplay.</li>
-                <li>Toolbar above canvas: enter value → Insert / Delete / Clear. Press Enter to insert quickly.</li>
-              </ul>
-            </div>
+            <section style={{ padding: 8, borderRadius: 8, background: "rgba(2,10,12,0.25)" }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Legend & Tips</div>
+              <div style={{ fontSize: 12, color: "#cfeff3" }}>
+                <div>• BF = balance factor = height(left) − height(right)</div>
+                <div>• Toolbar above canvas: type a number, press Enter or click Insert.</div>
+                <div>• Use Speed + Autoplay to step through the trace automatically.</div>
+              </div>
+            </section>
           </aside>
         </div>
       </div>
